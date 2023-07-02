@@ -1,0 +1,949 @@
+---
+title: "Customer Segmentation"
+author: "Thais Lovisi"
+date: "2023-06-15"
+output: html_document
+---
+
+# Introduction
+
+<br>Customer Personality Analysis helps a business to better understand its customers and makes it easier to change or create a new product. Helping with decision making. 
+
+<br>For example, the decision whether to invest money to market a new product, how much money to invest and what is the target customers. 
+
+<br>The core of a customer personality analysis is getting the answers to questions such as:
+
+* Consumer opinion about a product: what motivates the buy or not.
+* Consumer tendencies:  what people are doing rather than what they are saying about your product.
+* Consumer profile: specific characteristics of people that a purchases certain product.
+
+
+#### Goal
+
+This is project aims to perform unsupervised Machine Learning techniques to summarize customer segments. This project will work with concepts of data mining such as data understanding, data preparation, modeling, evaluation,and deployment.
+
+#### About the Dataset
+
+The dataset used on this analyze was obtained from [Kaggle's Customer Personality Analysis exercise](https://www.kaggle.com/datasets/imakash3011/customer-personality-analysis)
+
+* People
+  - ID: Customer's unique identifier
+  - Year_Birth: Customer's birth year
+  - Education: Customer's education level
+  - Marital_Status: Customer's marital status
+  - Income: Customer's yearly household income
+  - Kidhome: Number of children in customer's household
+  - Teenhome: Number of teenagers in customer's household
+  - Dt_Customer: Date of customer's enrollment with the company
+  - Recency: Number of days since customer's last purchase
+  - Complain: 1 if the customer complained in the last 2 years, 0 otherwise
+
+* Products
+  - MntWines: Amount spent on wine in last 2 years
+  - MntFruits: Amount spent on fruits in last 2 years
+  - MntMeatProducts: Amount spent on meat in last 2 years
+  - MntFishProducts: Amount spent on fish in last 2 years
+  - MntSweetProducts: Amount spent on sweets in last 2 years
+  - MntGoldProds: Amount spent on gold in last 2 years
+
+* Promotion
+  - NumDealsPurchases: Number of purchases made with a discount
+  - AcceptedCmp1: 1 if customer accepted the offer in the 1st campaign, 0 otherwise
+  - AcceptedCmp2: 1 if customer accepted the offer in the 2nd campaign, 0 otherwise
+  - AcceptedCmp3: 1 if customer accepted the offer in the 3rd campaign, 0 otherwise
+  - AcceptedCmp4: 1 if customer accepted the offer in the 4th campaign, 0 otherwise
+  - AcceptedCmp5: 1 if customer accepted the offer in the 5th campaign, 0 otherwise
+  - Response: 1 if customer accepted the offer in the last campaign, 0 otherwise
+  
+* Place
+  - NumWebPurchases: Number of purchases made through the company’s website
+  - NumCatalogPurchases: Number of purchases made using a catalogue
+  - NumStorePurchases: Number of purchases made directly in stores
+  - NumWebVisitsMonth: Number of visits to company’s website in the last month
+
+# Load Data  and Import libraries
+  
+```{r message=FALSE, warning=FALSE, include=FALSE, paged.print=FALSE}
+pacotes <- c("ggrepel",
+             "reshape2",
+             "PerformanceAnalytics",
+             "factoextra",
+             "psych",
+             "sp",
+             "tmap",
+             "tidyverse",
+             "kableExtra",
+             "dplyr",
+             "tsibble",
+             "plotly",
+             "ggplot2",
+             "GGally", 
+             "fastDummies",
+             "rgl",
+             "FactoMineR", 
+             "RColorBrewer",
+             "cluster",  # Load the cluster package 
+             "clustertend",
+             "scatterplot3d", 
+             "gridExtra",
+             "corrplot", "metan", "psych")
+if(sum(as.numeric(!pacotes %in% installed.packages())) != 0){
+  instalador <- pacotes[!pacotes %in% installed.packages()]
+  for(i in 1:length(instalador)) {
+    install.packages(instalador, dependencies = T)
+    break()}
+  sapply(pacotes, require, character = T) 
+} else {
+  sapply(pacotes, require, character = T) 
+}
+
+```
+
+
+```{r message=FALSE, warning=FALSE, paged.print=FALSE}
+market_campaign <- as.data.frame(read.csv("marketing_campaign.csv"))
+```
+
+# Data preparation
+
+### Knowing my Data
+
+
+```{r}
+glimpse(market_campaign)
+```
+
+<br>From the output, it`s time to panic a bit, the data is all merged in a single column. But worry not, with the power of tidyverse we will undo that tangled mess. Prepare to witness the magic of untangling data chaos and creating order, one spell at a time!
+
+<br>So, lets start of counter-spell🪄
+
+
+<br>As we can observe the data is stored as <chr> type, so we are dealing with data that was stored as text. The parterns are:
+* column names are separated by "." 
+* observations have as separator \t (tab) as we can see bellow.
+
+```{r}
+head(market_campaign, n = 5)
+```
+
+<br> So lets create step by step for this process in our Grimoire:
+* Split the data in different columns
+  * the separator is the regex expression \t
+* Convert each variable type
+*  Rename dataset for `new_market_campaign`
+
+
+```{r}
+# Split the data in different columns
+market_campaign <- market_campaign %>% separate (ID.Year_Birth.Education.Marital_Status.Income.Kidhome.Teenhome.Dt_Customer.Recency.MntWines.MntFruits.MntMeatProducts.MntFishProducts.MntSweetProducts.MntGoldProds.NumDealsPurchases.NumWebPurchases.NumCatalogPurchases.NumStorePurchases.NumWebVisitsMonth.AcceptedCmp3.AcceptedCmp4.AcceptedCmp5.AcceptedCmp1.AcceptedCmp2.Complain.Z_CostContact.Z_Revenue.Response, into = c("ID","Year_Birth","Education","Marital_Status","Income","Kidhome","Teenhome","Dt_Customer","Recency", "MntWines","MntFruits",  "MntMeatProducts" , "MntFishProducts" ,  "MntSweetProducts","MntGoldProds", "NumDealsPurchases"  ,  "NumWebPurchases"     , "NumCatalogPurchases"  , "NumStorePurchases", "NumWebVisitsMonth"      ,  "AcceptedCmp3" ,  "AcceptedCmp4", "AcceptedCmp5" , "AcceptedCmp1","AcceptedCmp2", "Complain", "Z_CostContact", "Z_Revenue",  "Response" ), sep = "\\t")
+  
+glimpse(market_campaign)
+```
+<br>Note that all data is stored as <chr>, the next step will be convert the ones that must be as factor, as numeric.  
+
+* cols 2,5:20, 27 and 28 will be transformed as a numeric
+* cols. 21:26 and 29 are dummies they should be stored as factor to avoid errors.
+* cols 1,3,4 will remain as text
+* Dt_Customer  must be changed for date type
+
+```{r}
+# Convert var type
+market_campaign <- market_campaign %>% mutate_at(vars(Year_Birth, Income, Kidhome, Teenhome, Recency,
+                                                      MntWines,MntFruits,MntMeatProducts,
+                                                      MntFishProducts, MntSweetProducts,MntGoldProds, NumDealsPurchases,
+                                                      NumWebPurchases, NumWebVisitsMonth, NumCatalogPurchases,
+                                                      NumStorePurchases, Z_CostContact, Z_Revenue, AcceptedCmp3, AcceptedCmp4,
+                                                      AcceptedCmp5, AcceptedCmp1, AcceptedCmp2), 
+                                                 as.numeric)
+
+market_campaign$Dt_Customer  <- as.Date(market_campaign$Dt_Customer,  format = "%d-%m-%Y")
+summary(market_campaign)
+```
+<br> At this point were identified 24 NA and a outlier `666666 ` on `Income`. The NA will simply be removed, and total number of data-points after removing the rows with missing values is: 2216
+
+```{r}
+market_campaign <- market_campaign %>% 
+                        filter(!is.na(Income))
+
+```
+
+#### Calculating Additional Features
+
+<br> From Dt_Customer we can find:
+-   The newest customer's enrollment date at the records: 2014-12-06
+-   The oldest customer's enrollment date at the records: 2012-01-08
+
+<br>Is interesting to add the Counting days that the customer is on our purchase list, we will do that by creating a new feature `Days_of_register`.
+
+```{r}
+d1 = max(market_campaign$Dt_Customer) #taking it to be the newest customer
+Days_of_register <- difftime(d1, market_campaign$Dt_Customer, units = "days")
+market_campaign$Days_of_register <- as.numeric(Days_of_register)
+```
+
+<br> About consumers it would be interesting to have data regarding 
+* `Age` extract from "Year_Birth" subtracted from "Dt_Customer"
+* `Total_Spent` amount spent by the customer in various categories over the span of two years.
+* `Living_With` out of "Marital_Status" to extract the living situation of couples.
+* `Children_Count` sum of number of kids and teenagers.
+* `Family_Size`
+* `Is_Parent` to indicate parenthood status 0 or 1
+
+
+```{r}
+# Age calculation
+data_colect_year <- format(market_campaign$Dt_Customer, "%Y")# converting for the same format
+market_campaign$age <- as.integer(data_colect_year) - market_campaign$Year_Birth
+
+# Total_Spent
+market_campaign$Total_Spent <- as.integer (market_campaign$MntWines + market_campaign$MntFruits+ 
+                                   market_campaign$MntMeatProducts +
+                                   market_campaign$MntFishProducts +
+                                   market_campaign$MntSweetProducts +
+                                   market_campaign$MntGoldProds)
+
+# Living_With
+market_campaign$Living_With <- market_campaign$Marital_Status
+market_campaign <- market_campaign %>%
+  mutate(Living_With = case_when(
+    Marital_Status %in% c("Married", "Together") ~ "Partner",
+    Marital_Status %in% c("Absurd", "Widow", "YOLO", "Divorced", "Single") ~ "Alone",
+    TRUE ~ ""
+  ))
+
+# Children_Count
+market_campaign$Children_Count <- as.numeric(market_campaign$Kidhome + market_campaign$Teenhome)
+
+# Family_Size
+
+market_campaign$Family_Size <- as.numeric(market_campaign$Children_Count + 1) # countwithout partner
+
+market_campaign <- market_campaign %>% mutate(Family_Size = case_when(Living_With == "Alone" ~ Family_Size + 0,
+                                                                     Living_With == "Partner" ~ Family_Size +1,
+                                                                      TRUE ~ Family_Size  # Retain Family_Size for other cases
+         ))
+
+# Is_Parent
+
+market_campaign$Is_Parent <- if_else(market_campaign$Children_Count > 0, 1, 0)
+```
+
+<br> From purchase habits is interesting to have the number of promotion accepted by certain client.
+
+```{r}
+market_campaign$Total_AcceptedCmp <- as.integer(market_campaign$AcceptedCmp3+
+                                                  market_campaign$AcceptedCmp4+
+                                                  market_campaign$AcceptedCmp5+
+                                                  market_campaign$AcceptedCmp1+
+                                                  market_campaign$AcceptedCmp2)
+```
+<br>For better visualization I will rename the colunms that have product type on it.
+
+```{r}
+# Renaming columns
+new_prod_names <- str_sub(colnames(market_campaign[,c(10:15)]), 4,20)
+prod_names <- c("MntWines", "MntFruits", "MntMeatProducts", "MntFishProducts", "MntSweetProducts",
+                    "MntGoldProds")
+new_prod_names <- gsub("Products|Prods|Mnt", "" , prod_names)
+
+for (i in 10:15) {
+  j <- i - 9  # Adjust j to start from 1
+  if (j <= length(new_prod_names)) {
+    colnames(market_campaign)[i] <- new_prod_names[j]
+  } else {
+    break  # Exit the loop if j exceeds new_prod_names length
+  }
+}
+```
+**All good! Data Prepared and ready to the Exploratory Analises** Time to dive in into the Middle-Earth and talk to the Statistics Wizzard!  
+
+<center>
+<div style="width:60%;height:0;padding-bottom:60%;position:relative;"><iframe src="https://giphy.com/embed/XY6gXjUQnpqrXppIkz" width="60%" height="60%" style="position:absolute" frameBorder="0" class="giphy-embed" allowFullScreen></iframe></div><p><a href="https://giphy.com/gifs/ready-wizard-spell-XY6gXjUQnpqrXppIkz"></a></p>
+<center>
+
+# Exploratory Analises
+
+### Frequency Table
+```{r}
+freq_tab_ed <- table(market_campaign$Education)
+print(freq_tab_ed)
+```
+
+```{r}
+freq_tab_marstat <- table(market_campaign$Marital_Status)
+print(freq_tab_marstat)
+```
+
+
+### Descriptive Stats
+
+```{r}
+summary(market_campaign)
+```
+<br>Note that at this moment were identified some outliers for `Income` the value 666666 is very high, as well is the `Age` of 121 we have two. In both cases is not possible determine if the numbers were a real input or an error during the data collection. Also those outliers have a big impact on the Mean. Before to decide how to deal with the outliers, lets plot a correlation graphic and boxplot.
+
+
+```{r}
+#Boxplot for the first 10 variables
+
+Outliers <- c(colnames(market_campaign[,c(5:7,9:15)]))
+ggplotly(
+  market_campaign[,c(5:7,9:15)] %>%
+    melt() %>%
+    ggplot(aes(x = variable, y = value, fill = variable)) +
+    geom_boxplot() +
+    geom_point(alpha = 0.5) +
+    labs(x = "Variable",
+         y = "Value") +
+    scale_fill_manual("Legend:",
+                      values = rainbow(n = 36)) +
+    theme_dark()
+)
+
+
+```
+```{r}
+#Boxplot for 16-26 variables
+
+Outliers <- c(colnames(market_campaign[,c(16:19)]))
+ggplotly(
+  market_campaign[,c(16:19)] %>%
+    melt() %>%
+    ggplot(aes(x = variable, y = value, fill = variable)) +
+    geom_boxplot() +
+    geom_point(alpha = 0.5) +
+    labs(x = "Variable",
+         y = "Value") +
+    scale_fill_manual("Legend:",
+                      values = rainbow(n = 36)) +
+    theme_dark()
+)
+
+
+```
+```{r}
+ggplotly()
+  market_campaign[,c(20,31,34,35)] %>%
+    melt() %>%
+    ggplot(aes(x = variable, y = value, fill = variable)) +
+    geom_boxplot() +
+    geom_point(alpha = 0.5) +
+    labs(x = "Variable",
+         y = "Value") +
+    scale_fill_manual("Legend:",
+                      values = rainbow(n = 36)) +
+    theme_dark()
+```
+
+
+```{r}
+ggplotly()
+  market_campaign[,c(30,32)] %>%
+    melt() %>%
+    ggplot(aes(x = variable, y = value, fill = variable)) +
+    geom_boxplot() +
+    geom_point(alpha = 0.5) +
+    labs(x = "Variable",
+         y = "Value") +
+    scale_fill_manual("Legend:",
+                      values = rainbow(n = 36)) +
+    theme_dark()
+```
+
+
+<br> Clearly, there are a few outliers in the Income and Age features. In this project it will be managed by deleting the outliers.
+
+```{r}
+market_campaign <- market_campaign %>% filter((Income < 600000 | age < 114))
+print(paste0("The total number of data-points after removing the outliers are: ", nrow(market_campaign)))
+```
+#### Checking for Correlations
+
+<br> Evans (1996) suggests for the absolute value of r:   
+
+* .00-.19 “very weak”
+* .20-.39 “weak” 
+* .40-.59 “moderate” 
+* .60-.79 “strong” 
+* .80-1.0 “very strong”
+
+
+
+```{r}
+# Correlation matrix
+
+matrix_1 <- market_campaign[, c(5, 9:20, 30:32, 34,35)]
+cor_matrix <- cor(matrix_1)
+
+# Plot the correlation matrix
+corrplot(cor_matrix, method = "color")
+
+
+```
+
+```{r}
+matrix_2 <- market_campaign[, c(5, 9:16)]
+pairs.panels(matrix_2)
+```
+```{r}
+matrix_3 <- market_campaign[, c( 17:20 ,30:32, 34,35)]
+pairs.panels(matrix_3)
+```
+
+<br> By the correlation matrix is possible to note that the correlation is:
+
+* strong positive correlation : 
+  * Between Income and Spent, Catalog_purchase, Meat, Wine
+  * Between Spent and Catalog_purchase, Store_Purchase, Family_size, Is_Parent and Children_Count
+  
+* very strong positive correlation:
+  * Between Spent and Vine and Fish
+  * Total_Spent Wine, NumCatalogPurchase and Meat
+  
+* positive moderate between:
+  * Fruit, Meat, Fish and Sweets
+  * Income and all food products
+  * Web purchase, StorePurchase and Total_Spent
+  * CatalofPurchase and StorePurchase
+  * WebVisits and ChildrenCount
+
+* negative moderate between:
+  * Catalog_purchase and WebVisits
+  * StorePurchase and WebVisits
+  * WebVisits and Total_Spent
+  * ChildrenCount, CatalogPurchase and Total_Spent
+  * Family_Size and Total_Spent
+  
+
+
+### Categorical Encoding
+
+<br>Categorical encoding is the process of converting categorical to numerical data so that a machine learning algorithm understands it. It simply converts categories to numbers.The two most widely used techniques are:
+
+* Label Encoding: a unique integer or alphabetical ordering represents each label.
+* One-Hot Encoding: is the process of creating dummy variables.
+
+<center>
+![Table One-Hot vs. Label Encoding](one_h_vs_label_encoding.jpg)
+<center>
+
+<br>We apply One-Hot Encoding when:
+
+* The categorical feature is not ordinal. The number of categorical features is is not big. In One-hot encoding each category is mutually exclusive. For example, “Red” may be encoded as [1, 0, 0], “Green” as [0, 1, 0], and “Blue” as [0, 0, 1].
+
+<br> We apply Label Encoding when:
+
+* The categorical feature is ordinal (like Jr. kg, Sr. kg, Primary school, high school) and  the number of categories is quite large as one-hot encoding can lead to high memory consumption. It preserves the ordinal relationship between categories if present. For example, “Red” may be encoded as 1, “Green” as 2, and “Blue” as 3.
+
+<br>We apply Ordinal Encoding when: 
+
+* Ordinal encoding is similar to label encoding but considers the order or rank of categories. For example, “Ocean” may be encoded as 1, “Sea” as 2, and “Coast” as 3. 
+
+Althought a Label encoding is space-efficient, it may introduce an arbitrary order to categorical values. One-hot encoding avoids this issue by creating binary columns for each category, but it can lead to high-dimensional data.
+
+<br>For the categorical vars in the present project is possible to use ordinal encoding for `Education` and label encoding for `Marital_Status` and `Living_With`. Or as there is no need to preserve the categorical rank we can simply apply `Label Encoding` for all vars except `Living_With` that can be done by one-hot encoding. Thus, the label encoding will be applied for `Education`, `Marital_Status` and `Living_With` by one-hot encoding.
+
+```{r}
+# Changing Education for numeric label
+market_campaign$Education <- as.numeric(factor(market_campaign$Education))
+
+# Changing the Living With
+market_campaign$Marital_Status <- as.numeric(factor(market_campaign$Marital_Status))
+
+market_campaign <- dummy_cols(market_campaign, select_columns = "Living_With", remove_selected_columns = TRUE)
+market_campaign <- market_campaign[, -c(37,38)]
+
+market_campaign <- market_campaign %>% mutate_at(vars(Complain, Response, Living_With_Partner), as.factor)
+```
+
+<br>Note that the categories are :
+-   Graduation: 3
+-   PhD: 5
+-   Master: 4
+-   Basic:  2
+-   2n Cycle: 1
+
+<br> The labels for Marital_Status:
+-   Single: 5
+-   Together: 6
+-   Married: 4
+-   Divorced: 3
+-   Widow: 7
+-   Alone: 2
+-   Absurd: 1
+-   YOLO : 8
+
+<br> Was created a new var called `Living_With_Partner` where:
+* Yes: 1
+* No: 0
+
+### Removing Unnecessary Columns
+
+```{r}
+market_campaign <- market_campaign[, -c(1,2,4,6:8,21:25,27,28)]
+head(market_campaign)
+```
+# Dimensional Reduction
+
+<br>After clean all unnecessary data we still with 25 variables, many of them correlated. As that song from Depeche Mode would say "It's no good!" but instead "be waiting patiently" to the data get smaller by itself is possible to perform dimensional reduction.
+
+<br>Dimensional reduction is the process of reducing the number of random variables under consideration, by obtaining a set of principal variables. And is here that the magic of modeling starts, with the *PCA (Principal component analysis)*.
+
+####Steps to run the PCA:
+1. Standardize the d-dimensional dataset.
+2. Check if is adequate conduce the PCA by the Bartlett’s Test of Sphericity
+2. Construct the covariance matrix.
+3. Decompose the covariance matrix into its eigenvectors and eigenvalues.
+4. Sort the eigenvalues by decreasing order to rank the corresponding eigenvectors.
+5. Select k eigenvectors, which correspond to the k largest eigenvalues, where k is the dimensionality of the new feature subspace (𝑘≤ 𝑑 ).
+6. Construct a projection matrix, W, from the "top" k eigenvectors.
+7. Transform the d-dimensional input dataset, using the projection matrix,  to obtain the new k-dimensional feature subspace.
+
+
+### Standardize data
+
+<br>Before start is necessary to standardize the dataset.
+
+```{r}
+# Standardize data
+market_campaign <- market_campaign %>% mutate(across(everything(), as.numeric))
+market_campaign_std <- market_campaign[, -c(1)]%>% 
+                                          mutate(across(everything(), (scale))) %>% 
+                                          as.matrix()
+```
+
+### Bartlett’s Test of Sphericity
+
+<br>Before perform any a data reduction technique such as principal component analysis or factor analysis is necessary to verify if the data reduction can compress the data without loose meaningful variables.  
+<br>The Bartlett’s Test of Sphericity compares an observed correlation matrix to the identity matrix, and checks if there is a redundancy between the variable. 
+
+<br>The null(H~0~) hypothesis of the test is that the variables are orthogonal, i.e. not correlated. The alternative hypothesis (H~1~) is that the variables are not orthogonal, i.e. they are correlated enough to where the correlation matrix diverges significantly from the identity matrix. 
+
+        	H0 : equal to identity matrix  (p-value > alpha)
+      		H1 : differs from the identity matrix (p-value < alpha)
+
+<br> Note: the Bartlett`s test must be performed on the original data rather than in the std version.
+      		
+```{r}
+# Bartlett's Test
+correl_matrix <- cor(market_campaign)
+correl_matrix
+rho <- cortest.bartlett((correl_matrix))
+rho
+```
+<br>For the current dataset X~2Bartlett~ = 7298.936 for the Degree of Freedom 351 and *alpha = 5*, p-value = 0, then this dataset is suitable for a data reduction technique.
+
+### PCA
+
+```{r}
+# Factors
+fact_1 <- prcomp(market_campaign_std)
+fviz_pca_var(fact_1, col.var="steelblue")# 
+```
+<br> The cumulative variance of two principals is equal to 0.443. More Principal Components may be  working its magic to explain enough variance. In order to determine the adequate number of PCs with Kaiser Criterion.
+
+```{r}
+# Eigenvalues
+eigenvalues <- round(as.numeric(fact_1$sdev^2))
+print(k <- sum(eigenvalues))
+```
+```{r}
+shared_variance <- as.data.frame (eigenvalues/k) %>% 
+  slice(1:26) %>%
+  melt()%>%
+  mutate(PC = paste0("PC", row_number())) %>%
+  rename(Shared_Variance = 1)
+
+shared_variance %>%
+  melt()%>%
+  ggplot(aes(x = PC, y = value, fill = variable))+
+  geom_col(col= "grey30", fill = "grey39")+
+  geom_text(aes(label =  paste0(round(value * 100, 2), "%")), col = "black", vjust = -0.3, size = 2)+
+  labs(x = "PC", y = "Shared Variance") +
+  theme_gray(base_size =8)
+```
+
+<br>At this step we have that the sum of the eigenvalues is 21 and also we have too many components. Is not even possible to differentiate them.Also is possible to visualize at the Chart that 11 PCs have to low contribution to the variance. We know that certain group of variables represented by a factor extracted from eigenvalues smaller than 1 are possibly not representing the behaviour of a original variable (exceptions are rare). Exceptions, usually occurs for values smaller but near to 1. The criteria of choice for number of eigenvalues > 1  is known as the Kaiser Criterion(a.k.a. Latent Root Criterion).
+
+```{r}
+# Kaiser Criterion
+k <- sum(eigenvalues > 1)
+print(k)
+```
+<br> We have 3 eigenvalues remaining, and therefore accordingly to the criterion 3 Principal Components to be selected. So the PCs that will be kept are the 3 ones with that most contribute for the shared Variance. Therefore, it will be kept PC1, PC2 and PC3.
+
+<br>Now the next step is evaluate which variable constitute the major part of the PC.
+
+```{r}
+# Running the PCA for 3 factors
+# Contributions for PC1
+var <- get_pca_var(fact_1) #variable extraction
+a <- fviz_contrib(fact_1, "var", axes = 1, xtickslab.rt = 90)
+print(plot(a, main = "Variables percentage contribution of first Principal Components"))
+```
+<br> For the PC1 the variables that most contribute for the generation of the components were Meat, Wines, Fish, Income, Total_Spent, NumCatalogPurchase, Fruits, Sweets, NumWebVisitsMonth, NumStorePurchase,Family_Size and Child_Count.
+
+```{r}
+# Contributions for PC2
+b <- fviz_contrib(fact_1, "var", axes = 2, xtickslab.rt = 90)
+print(plot(b, main = "Variables percentage contribution of first Principal Components"))
+
+```
+<br> For PC2 the main contributors are NumDealsPurchases, Family_Size, NumWebPurchases, Children_Count, Is_Parent, Win and Days_of_Register.
+```{r}
+# Contributios for PC3
+c <- fviz_contrib(fact_1, "var", axes = 3 , xtickslab.rt = 90)
+print(plot(c, main = "Variables percentage contribution of first Principal Components"))
+
+```
+
+<br>At PC3 we have as bigger contributors the variables Response, Days_of_Register, NumWebVisits, Living_With_Partner, , Family_size and Total_AcceptedCmp.
+
+### Cluster Tendencies According to PCA
+
+<br>Time to run one scaterplot for the PC with k=3 and apply the Hopkins test to see if the dataset has a tendency to clusters.But why should we do it? Because a big issue is that clustering methods will return clusters even if the data does not contain any clusters.
+
+<br>The Hopkins statistic (Lawson and Jurs 1990) is used to assess the clustering tendency of a data set by measuring the probability that a given data set is generated by uniform data distribution. In other words, it tests the spatial randomness of the data.
+
+- H0: the data set D is uniformly distributed (i.e., no meaningful clusters)
+- H1: the data set D is not uniformly distributed (i.e., contains meaningful clusters)
+
+<br>We can conduct the Hopkins Statistic test iteratively, using 0.5 as the threshold to reject the alternative hypothesis. That is, if H < 0.5, then it is unlikely that D has statistically significant clusters. Put in other words, If the value of Hopkins statistic is close to 1, then we can reject the null hypothesis and conclude that the dataset D is significantly a clusterable data.
+
+```{r}
+pca2 <-prcomp(market_campaign_std, center=FALSE, scale.=FALSE, rank. = 3) # stats::
+results <- as.data.frame(pca2$x)
+
+print(hop_stat <- clustertend:::hopkins(results, n = ceiling(nrow(results)/10)))
+```
+<br> specifically for `clustertend` package the output value for the function `hopkins()` gives 1- Hopkins statistics, so smaller the statistic, the better chances of Clusters. It means that Hstat = 0.8257675 . Thus, as Hopkins statistic is close to 1, then we can reject the null hypothesis and conclude that the dataset is significantly a clusterable data.
+
+```{r}
+# Create a color gradient from red to blue
+color_palette <- brewer.pal(9, "GnBu")
+
+# Create a vector of colors with the same length as the data
+colors <- rep(color_palette, length.out = nrow(results))
+
+# Create the scatterplot with the specified color palette
+scatterplot3d(results$PC1, results$PC2, results$PC3,
+              pch = 16, main = "3D Scatter Plot",
+              xlab = "PC1", ylab = "PC2", zlab = "PC3",
+              color = colors)
+```
+<br> At this point is not possible to differentiate any cluster yet. 
+
+<br>Now that we have reduced the dimensions for 4 using the magic of "DimensioNimbus" and "PCAtronus" we can jump to Clustering.
+<br>**Call me Hermione DataChangers** 🧙️
+
+# Clustering
+* Steps :
+  - Elbow Method to determine the number of clusters to be formed
+  - K-means Clustering runned on the ´results´ from PCA.
+  - Examining the clusters formed via scatter plot
+
+```{r}
+#Elbow Method using results from pac2 as input
+fviz_nbclust(results, kmeans, method ="wss", k.max = 20) +
+  geom_vline(xintercept = 4, linetype = "dashed", color = "red" )
+
+```
+<br> By the Elbow Chart the optimal number of Clusters(k) will be 4, that there is where it reduce the slope.Let's try to fit the K-means Clustering Model to get the final clusters.
+
+##K-means
+
+<br>The next step is to choose the most suitable distance metrics. Clustering for two different distance measures will be conducted, specifically for:
+
+* Euclidean distance
+* Manhattan distance
+
+<br> Only those two due the data characteristics (continuous and negative).
+
+```{r}
+# Generating the model
+kmeans_model <- eclust(results, "kmeans", hc_metric = "eucliden", k = 4)
+```
+
+```{r}
+fviz_silhouette(kmeans_model)
+```
+#### Clustering Raw data
+```{r}
+km1 <- eclust(market_campaign_std, "kmeans", hc_metric="eucliden",k=4)
+```
+```{r}
+fviz_silhouette(km1)
+
+```
+<br> Analysing the above results, Clustering on raw data definitely shows smaller average silhouette width. Thus, PCA analysis definitely helped and improved the final results of K-means clustering.
+
+```{r}
+data <- as.data.frame(kmeans_model$data)
+cluster_labels <- kmeans_model$cluster
+
+kmeans_model$cluster %>%
+scatterplot3d( data$PC1,   data$PC2, data$PC3,
+              color = cluster_labels, pch = 16, main = "3D Scatter Plot",
+              xlab = "PC1", ylab = "PC2", zlab = "PC3")
+```
+
+### Evaluating the models
+
+```{r}
+cluster_rank <- as.data.frame(kmeans_model$cluster)
+colnames(cluster_rank) <- "cluster"
+cluster_rank %>%
+  ggplot(aes(x = cluster, fill = cluster)) +
+  geom_bar() + 
+  labs(title = "Distribution of the Clusters") +
+  theme_minimal() +
+  theme(plot.title = element_text(size = 14, face = "bold"),
+        legend.position = "none")
+```
+
+<br> The clusters seem to be fairly distributed. Let's evaluate the cluster behavior in relation of `Total_Spent` and `Income`.
+
+
+```{r}
+market_campaign$cluster <- kmeans_model$cluster
+market_campaign <- as.data.frame(market_campaign)
+market_campaign %>%
+  ggplot(aes(x = Total_Spent , y = Income, color = factor(cluster))) +
+  geom_point() +
+  scale_color_manual(values = c("darkblue", "pink", "gold", "darkorchid")) +
+  labs(title = "Cluster's Profile Based On Income And Spending") +
+  theme_gray()
+
+```
+<br> Income vs spending plot shows the clusters pattern
+
+-   group 1: high spending & average income
+-   group 3: high spending & high income
+-   group 2: low spending & low income
+-   group 4: low spending & low income
+
+
+```{r}
+create_component_plots <- function(cluster_num) {
+  # Subset data for the specific cluster
+  cluster_data <- data[market_campaign$cluster == cluster_num, ]
+  
+  # Create individual component plots
+  plot1 <- ggplot(market_campaign, aes(x = Wines, y = Total_Spent, color = factor(cluster))) +
+  geom_point() +
+  scale_color_manual(values = c("darkblue", "pink", "gold", "darkorchid")) +
+  labs(title = "Cluster's Profile Wine") +
+  theme_gray()
+  
+  plot2 <- ggplot(market_campaign, aes(x = Fruits, y = Total_Spent, color = factor(cluster))) +
+  geom_point() +
+  scale_color_manual(values = c("darkblue", "pink", "gold", "darkorchid")) +
+  labs(title = "Cluster's Profile Fruits") +
+  theme_gray()
+  
+  plot3 <- ggplot(market_campaign, aes(x = Meat, y = Total_Spent, color = factor(cluster))) +
+  geom_point() +
+  scale_color_manual(values = c("darkblue", "pink", "gold", "darkorchid")) +
+  labs(title = "Cluster's Profile Meat") +
+  theme_gray()
+  
+  plot4 <- ggplot(market_campaign, aes(x = Fish, y = Total_Spent, color = factor(cluster))) +
+  geom_point() +
+  scale_color_manual(values = c("darkblue", "pink", "gold", "darkorchid")) +
+  labs(title = "Cluster's Profile Fish") +
+  theme_gray()
+  
+  plot5 <- ggplot(market_campaign, aes(x = Sweet, y = Total_Spent, color = factor(cluster))) +
+  geom_point() +
+  scale_color_manual(values = c("darkblue", "pink", "gold", "darkorchid")) +
+  labs(title = "Cluster's Profile Sweets") +
+  theme_gray()
+  
+  plot6 <- ggplot(market_campaign, aes(x = Gold, y = Total_Spent, color = factor(cluster))) +
+  geom_point() +
+  scale_color_manual(values = c("darkblue", "pink", "gold", "darkorchid")) +
+  labs(title = "Cluster's Profile Gold") +
+  theme_gray()
+  
+  # Combine the component plots using grid.arrange
+  grid.arrange(plot1, plot2, plot3, plot4, plot5, plot6, ncol = 2)
+}
+
+# Create a grid of subplots for each cluster
+plot_grid <- lapply(unique(market_campaign$cluster), create_component_plots)
+
+
+```
+
+#### Add a Totalnum_Prom_accepted that is the sum of prom accepted  
+
+```{r}
+market_campaign%>%
+  ggplot(aes(x = Total_AcceptedCmp, fill = factor(cluster))) +
+  geom_bar() +
+  labs( x = "Number of Offers Accepted", y = "Total Count")+
+  theme_gray()
+```
+<br>No one part take in all 5 of them. Perhaps better-targeted and well-planned campaigns are required to boost sales.
+
+```{r}
+market_campaign %>%
+  ggplot(aes(y  = Total_Spent, x= cluster, fill = factor(cluster))) +
+  geom_boxplot()+
+  theme_grey()
+```
+<br>From the above, it can be  seen that cluster 3 is our biggest set of customers in terms of expenditures. We can explore what each cluster is spending on for the targeted marketing strategies.
+
+```{r}
+market_campaign %>%
+  ggplot(aes(y  = NumDealsPurchases, x= cluster, fill = factor(cluster))) +
+  geom_boxplot()+
+  theme_grey()
+```
+<br> Unlike campaigns, the deals offered did had best outcome with cluster 1 and 4. However, does not seems to attract cluster 2.
+
+# PROFILING
+<br>Profiling involves generating descriptions of the clusters with reference to the input variables you used for the cluster analysis. Profiling acts as a class descriptor for the clusters and will help you to ‘tell a story’ so that you can understand this information and use it across your business.
+
+<br>I will be plotting some of the features that are indicative of the customer's personal traits in light of the cluster they are in. On the basis of this outcomes, I will be arriving at the conclusions.
+
+```{r}
+grouped_data <- market_campaign %>%
+  group_by(cluster) %>%
+  summarise(avg_children = mean(Children_Count), avg_fam = mean(Family_Size) )
+
+plot_list <- lapply(unique(grouped_data$cluster), function(cluster) {
+  data <- subset(grouped_data, cluster == cluster)
+  ggplot(data, aes( x = cluster , y = avg_children, fill = factor(cluster))) +
+    geom_col(position = "stack") +
+    labs(y = "Average Children Count", title = "Average Children Count by Cluster") +
+    theme_gray() +
+    facet_wrap(~ cluster, ncol = 2)
+})
+plot_list
+
+```
+```{r}
+pl2 <- lapply(unique(grouped_data$cluster), function(cluster) {
+  data <- subset(grouped_data, cluster == cluster)
+  ggplot(data, aes( x = cluster , y = avg_fam, fill = factor(cluster))) +
+    geom_col(position = "stack") +
+    labs(y = "Average Family Size", title = "Average Family Size by Cluster") +
+    theme_gray() +
+    facet_wrap(~ cluster, ncol = 2)
+})
+
+pl2
+```
+
+```{r}
+customer_data <- c("Is_Parent", "Living_With_Partner")
+pl3 <- lapply(customer_data, function(var) {
+  ggplot(market_campaign, aes( y = factor(.data[[var]]),  fill = factor(cluster))) +
+    geom_bar() +
+    labs(x = "Clusters", y = var)+
+    theme_gray()
+})
+grid.arrange(grobs = pl3, ncol = 1)
+```
+
+```{r}
+market_campaign_1 <- market_campaign %>% filter(cluster == 1)
+plot_data_1 <- market_campaign_1 %>%
+  ggplot(aes(y = age)) +
+  geom_bar(fill = "pink") +
+  labs( title = "Age vs Total_Spent for Cluster 1")+
+  theme_gray()
+
+market_campaign_2 <- market_campaign %>% filter(cluster == 2)
+plot_data_2 <- market_campaign_2 %>%
+  ggplot(aes(y = age)) +
+  geom_bar(fill = "purple") +
+  labs( title = "Age vs Total_Spent for Cluster 2")+
+  theme_gray()
+
+market_campaign_3 <- market_campaign %>% filter(cluster == 3)
+plot_data_3 <- market_campaign_3 %>%
+  ggplot(aes(y = age)) +
+  geom_bar(fill = "darkblue") +
+  labs( title = "Age vs Total_Spent for Cluster 3")+
+  theme_gray()
+
+market_campaign_4 <- market_campaign %>% filter(cluster == 4)
+plot_data_4 <- market_campaign_4 %>%
+  ggplot(aes(y = age)) +
+  geom_bar(fill = "yellow") +
+  labs( title = "Age vs Total_Spent for Cluster 4")+
+  theme_gray()
+
+grid.arrange(plot_data_1, plot_data_2, plot_data_3, plot_data_4, ncol = 2)
+
+```
+
+```{r}
+grouped_data_4 <- market_campaign %>%
+  group_by(cluster) %>%
+  summarise(avg_days = mean(Days_of_register))
+
+plot_data_21 <- grouped_data_4 %>%
+  group_by(cluster)%>%
+  ggplot(aes(y = avg_days, x = cluster, fill = factor(cluster))) +
+  geom_col() +
+  theme_gray()
+plot_data_21
+
+```
+```{r}
+plots_1 <- market_campaign %>%
+  mutate(cluster = as.factor(cluster)) %>%
+  ggplot() +
+  geom_density_2d(aes(x = Education, y = Total_Spent, fill = cluster, color = cluster, group = cluster), alpha = 0.5, na.rm = FALSE) +
+  scale_color_manual(values = c("deeppink", "green3", "dodgerblue2","darkorchid1")) +
+  scale_fill_manual(values = c("deeppink", "green3", "dodgerblue2","darkorchid1")) +
+  labs(x = "Education", y = "Total Spent", title = "Educational Profile vs. Total Spent") +
+  theme_bw()
+
+plots_1
+
+
+```
+
+<br> Cluster 1:
+  -   Average Children Count : is a second in this criteria being surpassed only by number 4
+  -  Average Family Size : Maximal size 4 members, is a second in this criteria being surpassed only by number 4.
+  -  Living With a Partner : Single parents are a subset of this group, however is predominant the presence of Togheter status.
+  -  Age vs total spent : has its biggest number of consumers in between 30-65 y.o.
+  -  Days_of_register : contains consumers that are registered for longer period.
+
+
+<br> Cluster 2:
+  -  Family Size : Maximum value 3
+  -  Is_Parent: majority of those consumers for this cluster are parents 
+  -  Living With a Partner : Single parents are a subset of this group
+  -  Age vs total spent : relatively younger with age values that concentrates in between 20-45 y.o
+
+
+<br> Cluster 3:
+  -  Average Children Count : smallest number of children count.
+  -  Is_Parent: mainly composed by not parents
+  -  Average Family Size : smallest family sizes at max 2 members
+  -  Living with partner : slightly majority living as a couple reather than single.
+  -  Age vs total spent : more disperse ages 30-60 y.o
+  -  Education Level : between the consumers with educational level 3 is the cluster that tend to spend more. 
+
+<br> Cluster 4
+  -  Is_Parent: Yes, majority
+  -  Average Children Count : biggest between all clusters
+  -  Average Family Size : biggest in terms of average and with max. number of family members equals to 5 and minimal 2.
+  -  Living with partner : Yes, majority of them
+  -  Age vs total spent : concentrates between 25-70 y.o
+  -  Days_of_register: smallest 300
+  -  Income: lower income group.
+
+# CONCLUSION
+
+In this project, I`d performed unsupervised clustering. I did use dimensionality reduction using PCA followed by k-means. The final output from cluster up with 4 clusters that were used in profiling customers according to their family structures and income/spending. This can be used in planning better marketing strategies.
+ 
+# Bibliography
+]Hill,N.andAlexander,J.(2017),theHandbookofCustomerSatisfactionandLoyalty Measurement, Routledge.
+Ivens,Bjoern,andKatharinaS.Valta.“CustomerBrandPersonalityPerception:A TaxonomicAnalysis.”JournalofMarketingManagement,vol.28,no.9-10,Taylor&Francis, 2012, pp. 1062–93, doi:10.1080/0267257X.2011.615149.
